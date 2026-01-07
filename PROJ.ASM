@@ -4,6 +4,7 @@ data SEGMENT
     msj_intro db 'Indroduceti octetii in format hex (intre 8 si 16 valori): $'
     msj_eroare db 13, 10, 'Input invalid / numar de valori invalid(8 - 16 valori).', 13, 10, '$'
     msj_C   db 13, 10, 'Cuvantul C calculat: $'
+    msj_rot  db 13,10,'Sirul dupa rotiri (BIN HEX):',13,10,'$'
     hex_tbl db '0123456789ABCDEF'
     bufC    db '0000','$'
     sir_introdus db 50, ?, 50 dup(?)	; AH = 0Ah (buffer DOS)
@@ -13,6 +14,7 @@ data SEGMENT
     msj_poz db 13,10,'Pozitia octetului cu cei mai multi biti 1: $'
     max_bits db 0
     poz_max  db 0
+    tmp_rot db 0
 
 
 data ENDS
@@ -343,11 +345,114 @@ find_done:
     lea dx, bufC
     int 21h
 
-
-
 ; ====================================================================================================
+    mov ah, 09h
+    lea dx, msj_rot
+    int 21h
 
-    
+    lea si, octeti
+    mov cl, nocteti
+    xor ch, ch              ; CX = nr octeti
+
+rot_loop:
+    cmp cx, 0
+    jne rot_cont
+    jmp rot_done
+rot_cont:
+
+    mov al, [si]            ; AL = octet curent
+
+    ; N = bit7 + bit6 (0..2)
+    mov ah, al
+    shr ah, 6
+    and ah, 03h
+
+    ; ROL fara CL (nu stricam CX)
+    cmp ah, 0
+    je  rot_ok
+    cmp ah, 1
+    je  rot1
+    rol al, 1
+rot1:
+    rol al, 1
+rot_ok:
+
+    mov [si], al
+    mov tmp_rot, al
+
+    ; ===== BIN in bufC =====
+    lea di, bufC
+    mov bl, tmp_rot
+    mov bp, 8
+bin_to_buf:
+    shl bl, 1
+    jc  bit_is_1
+    mov byte ptr [di], '0'
+    jmp bit_done
+bit_is_1:
+    mov byte ptr [di], '1'
+bit_done:
+    inc di
+    dec bp
+    jne bin_to_buf
+
+    mov byte ptr [di], '$'
+
+    mov ah, 09h
+    lea dx, bufC
+    int 21h
+
+    ; spatiu
+    mov ah, 02h
+    mov dl, ' '
+    int 21h
+    ; ===== HEX in bufC (SAFE pe 8086) =====
+    push si                 ; salvez SI (era pointer in octeti)
+
+    lea si, hex_tbl         ; SI = baza tabelului
+    lea di, bufC
+
+    mov ah, tmp_rot         ; valoarea de convertit
+
+    ; cifra 1: high nibble
+    mov bl, ah
+    shr bl, 4
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    inc di
+
+    ; cifra 2: low nibble
+    mov bl, ah
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    inc di
+
+    mov byte ptr [di], '$'
+
+    mov ah, 09h
+    lea dx, bufC
+    int 21h
+
+    pop si                  ; refac SI (inapoi la octeti)
+
+
+    ; newline
+    mov ah, 02h
+    mov dl, 13
+    int 21h
+    mov dl, 10
+    int 21h
+
+    inc si
+    dec cx
+    jmp rot_loop
+
+rot_done:
+
 
     mov ah, 08h                    ; codul e in standby pana interactioneaza utilizatorul
     int 21h
@@ -356,5 +461,3 @@ find_done:
     int 21h
 code ENDS
 END start
-
-
