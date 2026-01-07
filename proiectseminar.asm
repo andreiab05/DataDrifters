@@ -3,9 +3,13 @@ ASSUME cs:code, ds:data
 data SEGMENT
     msj_intro db 'Indroduceti octetii in format hex (intre 8 si 16 valori): $'
     msj_eroare db 13, 10, 'Input invalid / numar de valori invalid(8 - 16 valori).', 13, 10, '$'
+    msj_C   db 13, 10, 'Cuvantul C calculat: $'
+    hex_tbl db '0123456789ABCDEF'
+    bufC    db '0000','$'
     sir_introdus db 50, ?, 50 dup(?)	; AH = 0Ah (buffer DOS)
     octeti db 16 dup(0) ; aici stocam octetii convertiti
     nocteti db 0        ; cate valori am citit
+    C dw ?
 
 data ENDS
 
@@ -123,10 +127,113 @@ cifra2_corecta:
 conversie_finalizata:
     mov al, nocteti
 
+    cmp al, 8
+    jae ok_min        
+    jmp input_gresit  
+    ok_min:                         ; verific sa fie minim de 8 octeti
+
     cmp al, 16
     jbe ok_max
-    jmp input_gresit                ; verific sa fie mai putin de 16 octeti
+    jmp input_gresit                ; verific sa fie maxim de 16 octeti
     ok_max:
+
+; ====================================================================================================
+
+    mov al, [octeti]                ; primul octet 
+
+    xor bh, bh
+    mov bl, nocteti
+    dec bl
+    mov ah, [octeti + bx]           ; ultimul octet
+
+    and al, 0F0H                    
+    shr al, 4                       ; AL = primii 4 biti
+
+    and ah, 0Fh                     ; AH = ultimii 4 biti
+
+    xor al, ah
+    mov dl, al                      ; DL = bitii 0 - 3 din C
+
+    xor bl, bl                      ; golim BL pentru PAS 2
+    mov cl, nocteti
+    xor ch, ch
+    mov si, offset octeti
+
+    pas2_loop:
+        mov al, [si]
+        shr al, 2                   ; bitii 2 - 5 devin bitii 4 - 7
+        and al, 0Fh                 
+        or  bl, al                  ; facem OR intre bitii acumulati
+        inc si
+    loop pas2_loop
+
+    and bl, 0Fh     
+
+    xor ax, ax
+    mov cl, nocteti
+    xor ch, ch
+    mov si, offset octeti
+
+    pas3_loop:
+        add al, [si]
+        inc si
+    loop pas3_loop                
+
+    mov ah, al
+    shl bl, 4
+    or  bl, dl
+
+    mov al, bl                      ; AX = cuvantul C
+    mov C, ax
+
+    lea si, hex_tbl
+    lea di, bufC
+
+    ; cifra 1: high nibble din AH
+    mov bl, ah
+    shr bl, 4
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    inc di
+
+    ; cifra 2: low nibble din AH
+    mov bl, ah
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    inc di
+
+    ; cifra 3: high nibble din AL
+    mov bl, al
+    shr bl, 4
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    inc di
+
+    ; cifra 4: low nibble din AL
+    mov bl, al
+    and bl, 0Fh
+    xor bh, bh
+    mov dl, [si+bx]
+    mov [di], dl
+    ; urmeaza deja '$' in bufC
+
+    ; afisare mesaj
+    mov ah, 09h
+    lea dx, msj_C
+    int 21h
+
+    ; afisare valoare C (hex, ASCII)
+    mov ah, 09h
+    lea dx, bufC
+    int 21h
+
+; ====================================================================================================
 
     mov ah, 08h                    ; codul e in standby pana interactioneaza utilizatorul
     int 21h
