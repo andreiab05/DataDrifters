@@ -15,8 +15,6 @@ data SEGMENT
     max_bits db 0
     poz_max  db 0
     tmp_rot db 0
-
-
 data ENDS
 
 code SEGMENT
@@ -25,6 +23,9 @@ start:
     mov ax, data
     mov ds, ax
 
+;============================================================
+;CITIRE, CONVERTIRE DIN ASCII IN VALORI BINARE, STOCARE 
+;============================================================
 citire:
     ; afisare mesaj de introducere
     mov ah, 09h
@@ -143,13 +144,15 @@ conversie_finalizata:
     jmp input_gresit                ; verific sa fie maxim de 16 octeti
     ok_max:
 
-; ====================================================================================================
+;============================================================
+;CALCULAREA CUVANTULUI C 
+;============================================================
 
     mov al, [octeti]                ; primul octet 
 
-    xor bh, bh
+    xor bh, bh                      ; golim registru BH ca sa salvam in BX numarul de octeti
     mov bl, nocteti
-    dec bl
+    dec bl                          ; scadem cu unu fiind o indexare de la 0 la n - 1
     mov ah, [octeti + bx]           ; ultimul octet
 
     and al, 0F0H                    
@@ -161,50 +164,50 @@ conversie_finalizata:
     mov dl, al                      ; DL = bitii 0 - 3 din C
 
     xor bl, bl                      ; golim BL pentru PAS 2
-    mov cl, nocteti
-    xor ch, ch
-    mov si, offset octeti
+    xor ch, ch                      
+    mov cl, nocteti                 ; nr octeti
+    mov si, offset octeti           ; incarcam sirul cu valorile binare
 
     pas2_loop:
         mov al, [si]
         shr al, 2                   ; bitii 2 - 5 devin bitii 4 - 7
         and al, 0Fh                 
-        or  bl, al                  ; facem OR intre bitii acumulati
+        or  bl, al                  ; facem OR intre bitii acumulati folosind BL
         inc si
     loop pas2_loop
 
-    and bl, 0Fh     
+    and bl, 0Fh                     ; se reduce rezultatul la 4 biti
 
-    xor ax, ax
-    mov cl, nocteti
+    xor ax, ax                      ; golire AX pentru a rezerva registrul rezultatului final
     xor ch, ch
+    mov cl, nocteti                 ; nr octeti
     mov si, offset octeti
 
     pas3_loop:
-        add al, [si]
+        add al, [si]                ; adunam toti octetii si din cauza la overflow nu trebuie facut %256
         inc si
     loop pas3_loop                
 
-    mov ah, al
+    mov ah, al                      ; lipim bitii
     shl bl, 4
     or  bl, dl
 
     mov al, bl                      ; AX = cuvantul C
     mov C, ax
 
-    lea si, hex_tbl
-    lea di, bufC
+    lea si, hex_tbl                 ; incarcam tabelul hexa
+    lea di, bufC                    ; buffer
 
-    ; cifra 1: high nibble din AH
+    ; cifra 1: semi-octet superior din AH
     mov bl, ah
     shr bl, 4
-    and bl, 0Fh
+    and bl, 0Fh                     ; izolam semi-octet
     xor bh, bh
-    mov dl, [si+bx]
+    mov dl, [si+bx]                 ; caracterul hexa corespunzator semi-octetului
     mov [di], dl
-    inc di
+    inc di                          ; scriem caracterul in buffer si avansam pe urmatoare pozitie
 
-    ; cifra 2: low nibble din AH
+    ; cifra 2: semi-octet inferior din AH
     mov bl, ah
     and bl, 0Fh
     xor bh, bh
@@ -212,7 +215,7 @@ conversie_finalizata:
     mov [di], dl
     inc di
 
-    ; cifra 3: high nibble din AL
+    ; cifra 3: semi-octet superior din AL
     mov bl, al
     shr bl, 4
     and bl, 0Fh
@@ -221,7 +224,7 @@ conversie_finalizata:
     mov [di], dl
     inc di
 
-    ; cifra 4: low nibble din AL
+    ; cifra 4: semi-octet inferior din AL
     mov bl, al
     and bl, 0Fh
     xor bh, bh
@@ -239,7 +242,9 @@ conversie_finalizata:
     lea dx, bufC
     int 21h
 
-
+;============================================================
+; MANIPULAREA SIRULUI DE OCTETI
+;============================================================
 
     mov cl, nocteti
     dec cl                              ; n-1 iteratii externe
@@ -254,7 +259,7 @@ inner_loop:
     cmp al, bl
     jae no_swap                         ; daca al >= bl, e ok (descrescator)
 
-    ; swap
+    ; altfel se face swap
     mov [si], bl
     mov [si+1], al
 
@@ -265,6 +270,8 @@ no_swap:
 
     dec cl
     jnz outer_loop
+; s-a terminat sortarea
+
     mov max_bits, 0
     mov poz_max, 0
 
@@ -322,16 +329,16 @@ find_done:
 
     mov ah, poz_max          ; AH = valoarea (byte) de afisat
 
-    ; cifra 1: high nibble din AH
+    ; cifra 1: semi-octet superior din AH
     mov bl, ah
     shr bl, 4
-    and bl, 0Fh
+    and bl, 0Fh              ; izolam semi-octet
     xor bh, bh
-    mov dl, [si+bx]
+    mov dl, [si+bx]          ; caracterul hexa corespunzator semi-octetului
     mov [di], dl
-    inc di
+    inc di                   ; scriem caracterul in buffer si avansam pe urmatoare pozitie
 
-    ; cifra 2: low nibble din AH
+    ; cifra 2: semi-octet inferior din AH
     mov bl, ah
     and bl, 0Fh
     xor bh, bh
@@ -345,7 +352,11 @@ find_done:
     lea dx, bufC
     int 21h
 
-; ====================================================================================================
+;============================================================
+; ROTIRI SI SHIFTARI
+;============================================================
+
+    ; afisare mesaj al cerintei
     mov ah, 09h
     lea dx, msj_rot
     int 21h
@@ -356,16 +367,18 @@ find_done:
 
 rot_loop:
     cmp cx, 0
-    jne rot_cont
-    jmp rot_done
+    jne rot_cont            ; cat timp sunt elemente (CX /= 0) ramanem in bucla 
+    jmp rot_done            
 rot_cont:
 
     mov al, [si]            ; AL = octet curent
 
-    ; N = bit7 + bit6 (0..2)
+    ; N = bit7 + bit6
     mov ah, al
     shr ah, 6
     and ah, 03h
+    ; aducem primii doi biti pe pozitiile 0 si 1
+    ; AH devine = 0, 1, 2 sau 3 (facem o masca 000000xx)
 
     ; ROL fara CL (nu stricam CX)
     cmp ah, 0
@@ -376,45 +389,51 @@ rot_cont:
 rot1:
     rol al, 1
 rot_ok:
-
-    mov [si], al
-    mov tmp_rot, al
+    ; fac rotirea cu N pozitii fara CX deoarece este contorul buclei externe
+    mov tmp_rot, al             ; salvam rezultatul
 
     ; ===== BIN in bufC =====
-    lea di, bufC
-    mov bl, tmp_rot
-    mov bp, 8
+    lea di, bufC                ; inceput buffer
+    mov bl, tmp_rot             ; valoarea care va fi shiftata pentru extragerea bitilor
+    mov bp, 8                   ; contor
+
 bin_to_buf:
     shl bl, 1
     jc  bit_is_1
     mov byte ptr [di], '0'
     jmp bit_done
+
 bit_is_1:
     mov byte ptr [di], '1'
+
 bit_done:
     inc di
     dec bp
     jne bin_to_buf
+    ; shiftez din BL => bitul ajunge in CF => fac 8 shiftari ca sa identific bitii si sa
+    ; ii scriu pe rand in ascii in buffer
 
     mov byte ptr [di], '$'
 
     mov ah, 09h
     lea dx, bufC
     int 21h
+    ; afisam sirul din buffer
 
-    ; spatiu
     mov ah, 02h
     mov dl, ' '
     int 21h
-    ; ===== HEX in bufC (SAFE pe 8086) =====
-    push si                 ; salvez SI (era pointer in octeti)
+    ; spatiu
 
-    lea si, hex_tbl         ; SI = baza tabelului
+    ; ===== HEX in bufC =====
+    push si                 
+
+    lea si, hex_tbl         
     lea di, bufC
 
     mov ah, tmp_rot         ; valoarea de convertit
 
-    ; cifra 1: high nibble
+    ; cifra 1: semi-octet superior
     mov bl, ah
     shr bl, 4
     and bl, 0Fh
@@ -423,7 +442,7 @@ bit_done:
     mov [di], dl
     inc di
 
-    ; cifra 2: low nibble
+    ; cifra 2: semi-octet inferior
     mov bl, ah
     and bl, 0Fh
     xor bh, bh
@@ -439,7 +458,6 @@ bit_done:
 
     pop si                  ; refac SI (inapoi la octeti)
 
-
     ; newline
     mov ah, 02h
     mov dl, 13
@@ -452,7 +470,6 @@ bit_done:
     jmp rot_loop
 
 rot_done:
-
 
     mov ah, 08h                    ; codul e in standby pana interactioneaza utilizatorul
     int 21h
